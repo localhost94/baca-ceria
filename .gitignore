@@ -1,0 +1,5 @@
+baca.sqlite*
+baca.backup-*.sqlite
+audio-cache/
+node_modules
+.env

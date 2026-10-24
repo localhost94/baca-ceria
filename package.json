@@ -1,0 +1,6 @@
+{
+  "name": "baca-ceria",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "bun server.ts" }
+}
