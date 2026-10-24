@@ -416,39 +416,174 @@ function qTokens(p, body, finish, info) { buildTokens(p.text.split(" "), p.text,
 
 /* ---------- mode bangun: Minecraft (huruf -> kata) & Lego (kata -> kalimat) ---------- */
 // tiap soal benar menambah 1 bagian; 5 bagian = bangunan selesai. Baris disusun dari bawah ke atas.
+// tiap ronde memakai satu bangunan acak (tidak sama dengan ronde sebelumnya)
 const BUILDS = {
-  // rumah kayu 7 balok: s batu, l batang kayu, p papan, d pintu, g kaca, b atap bata, . kosong
-  minecraft: ["sssssss", "lppdppl", "lpgdgpl", ".bbbbb.", "..bbb.."],
-  // mobil: [lebar dari 10, warna]; "." = celah kosong
+  // 7 balok per baris: s batu, l batang kayu, p papan, d pintu, g kaca, b bata, a daun, k pasir, c kaktus,
+  // m creeper, z hitam, w air, h wol putih, o emas, i berlian, r merah, f kulit, . kosong
+  // bangunan yang ditulis dari atas ke bawah dibalik dengan .reverse()
+  minecraft: [
+    { name: "🏠 Rumah", rows: ["sssssss", "lppdppl", "lpgdgpl", ".bbbbb.", "..bbb.."] },
+    { name: "🌳 Pohon", rows: ["...l...", "...l...", ".aaaaa.", ".aaaaa.", "..aaa.."] },
+    { name: "💚 Creeper", rows: ["mmzmzmm", "mmzzzmm", "mmmzmmm", "mzzmzzm", "mmmmmmm"] },
+    { name: "🌵 Kaktus", rows: ["kkkkkkk", "...c...", ".c.c.c.", ".ccccc.", "...c..."] },
+    { name: "⛵ Perahu", rows: ["wwwwwww", ".ppppp.", ".hhl...", "..hl...", "...l..."] },
+    { name: "🗡️ Pedang", rows: ["...l...", "..ooo..", "...i...", "...i...", "...i..."] },
+    { name: "🔺 Piramida", rows: ["ooooooo", ".ooooo.", "..ooo..", "...o...", "...i..."] },
+    { name: "🍄 Jamur", rows: ["..rhr..", ".rrrhr.", "rhrrrrr", "..kkk..", "..kkk.."].reverse() },
+    { name: "🏰 Menara", rows: ["s.s.s.s", "sssssss", "sgsssgs", "sssssss", "sssdsss"].reverse() },
+    { name: "💎 Berlian", rows: [".iiiii.", "iiiiiii", ".iiiii.", "..iii..", "...i..."].reverse() },
+    { name: "❤️ Hati", rows: [".rr.rr.", "rrrrrrr", ".rrrrr.", "..rrr..", "...r..."].reverse() },
+    { name: "🙂 Steve", rows: ["lllllll", "lfffffl", "fhwfwhf", "ffflfff", "fflllff"].reverse() },
+    { name: "🕌 Masjid", rows: ["a..o..a", "s.aaa.s", "saaaaas", "sgsdsgs", "sssdsss"].reverse() },
+    { name: "🍎 Apel", rows: ["...la..", ".rr.rr.", "rrrrrrr", "rrrrrrr", ".rrrrr."].reverse() },
+    { name: "⭐ Bintang", rows: ["...o...", "..ooo..", "ooooooo", ".ooooo.", "oo...oo"].reverse() },
+    { name: "🌙 Bulan", rows: ["..oo...", ".oo....", ".oo....", ".oo....", "..oo..."].reverse() },
+    { name: "🍉 Semangka", rows: ["aaaaaaa", "rzrrrzr", ".rrzrr.", "..rrr..", "...r..."].reverse() },
+    { name: "☀️ Matahari", rows: ["o..o..o", ".ooooo.", "ooooooo", ".ooooo.", "o..o..o"].reverse() },
+  ],
+  // [lebar dari 10, warna]; "." = celah kosong; wheels = roda di baris bawah
   lego: [
-    [[10, "k"]],
-    [[2, "y"], [6, "r"], [2, "r"]],
-    [[1, "."], [4, "r"], [4, "r"], [1, "."]],
-    [[2, "."], [2, "w"], [2, "w"], [2, "w"], [2, "."]],
-    [[2, "."], [6, "b"], [2, "."]],
+    { name: "🚗 Mobil", wheels: true, rows: [
+      [[10, "k"]],
+      [[2, "y"], [6, "r"], [2, "r"]],
+      [[1, "."], [4, "r"], [4, "r"], [1, "."]],
+      [[2, "."], [2, "w"], [2, "w"], [2, "w"], [2, "."]],
+      [[2, "."], [6, "b"], [2, "."]],
+    ] },
+    { name: "🏠 Rumah", rows: [
+      [[4, "y"], [2, "o"], [4, "y"]],
+      [[2, "y"], [2, "w"], [2, "o"], [2, "w"], [2, "y"]],
+      [[10, "r"]],
+      [[2, "."], [6, "r"], [2, "."]],
+      [[4, "."], [2, "r"], [4, "."]],
+    ] },
+    { name: "🌳 Pohon", rows: [
+      [[4, "."], [2, "n"], [4, "."]],
+      [[4, "."], [2, "n"], [4, "."]],
+      [[1, "."], [8, "g"], [1, "."]],
+      [[2, "."], [6, "g"], [2, "."]],
+      [[4, "."], [2, "g"], [4, "."]],
+    ] },
+    { name: "🚀 Roket", rows: [
+      [[2, "r"], [1, "."], [4, "k"], [1, "."], [2, "r"]],
+      [[3, "."], [4, "w"], [3, "."]],
+      [[3, "."], [4, "b"], [3, "."]],
+      [[3, "."], [4, "w"], [3, "."]],
+      [[4, "."], [2, "r"], [4, "."]],
+    ] },
+    { name: "⛵ Kapal", rows: [
+      [[2, "."], [6, "b"], [2, "."]],
+      [[10, "b"]],
+      [[2, "."], [3, "w"], [1, "n"], [4, "."]],
+      [[3, "."], [2, "w"], [1, "n"], [4, "."]],
+      [[5, "."], [2, "r"], [3, "."]],
+    ] },
+    { name: "🚂 Kereta", wheels: true, rows: [
+      [[10, "k"]],
+      [[6, "g"], [4, "r"]],
+      [[1, "."], [2, "k"], [3, "."], [4, "r"]],
+      [[1, "."], [2, "k"], [3, "."], [4, "y"]],
+      [[1, "."], [2, "w"], [7, "."]],
+    ] },
+    { name: "🏰 Kastil", rows: [
+      [[4, "k"], [2, "n"], [4, "k"]],
+      [[4, "k"], [2, "n"], [4, "k"]],
+      [[10, "k"]],
+      [[2, "k"], [1, "."], [1, "k"], [2, "."], [1, "k"], [1, "."], [2, "k"]],
+      [[2, "r"], [6, "."], [2, "r"]],
+    ] },
+    { name: "🌷 Bunga", rows: [
+      [[3, "."], [4, "o"], [3, "."]],
+      [[4, "."], [2, "g"], [4, "."]],
+      [[2, "."], [2, "g"], [2, "g"], [2, "g"], [2, "."]],
+      [[2, "."], [2, "r"], [2, "y"], [2, "r"], [2, "."]],
+      [[3, "."], [4, "r"], [3, "."]],
+    ] },
+    { name: "✈️ Pesawat", rows: [
+      [[2, "."], [2, "k"], [2, "."], [2, "k"], [2, "."]],
+      [[10, "b"]],
+      [[1, "b"], [2, "w"], [2, "w"], [2, "w"], [3, "b"]],
+      [[7, "."], [3, "r"]],
+      [[8, "."], [2, "r"]],
+    ] },
+    { name: "🤖 Robot", rows: [
+      [[2, "."], [2, "k"], [2, "."], [2, "k"], [2, "."]],
+      [[2, "."], [6, "b"], [2, "."]],
+      [[1, "k"], [1, "."], [2, "b"], [2, "y"], [2, "b"], [1, "."], [1, "k"]],
+      [[3, "."], [1, "w"], [2, "k"], [1, "w"], [3, "."]],
+      [[4, "."], [2, "r"], [4, "."]],
+    ] },
+    { name: "🎂 Kue", rows: [
+      [[1, "."], [8, "k"], [1, "."]],
+      [[1, "."], [8, "n"], [1, "."]],
+      [[2, "."], [6, "y"], [2, "."]],
+      [[3, "."], [1, "w"], [2, "."], [1, "w"], [3, "."]],
+      [[3, "."], [1, "o"], [2, "."], [1, "o"], [3, "."]],
+    ] },
+    { name: "🚌 Bus", wheels: true, rows: [
+      [[10, "k"]],
+      [[10, "y"]],
+      [[1, "y"], [2, "w"], [2, "w"], [2, "w"], [2, "w"], [1, "y"]],
+      [[10, "y"]],
+      [[1, "."], [8, "o"], [1, "."]],
+    ] },
+    { name: "🕌 Masjid", rows: [
+      [[1, "k"], [1, "."], [2, "y"], [2, "n"], [2, "y"], [1, "."], [1, "k"]],
+      [[1, "k"], [1, "."], [6, "y"], [1, "."], [1, "k"]],
+      [[1, "k"], [2, "."], [4, "g"], [2, "."], [1, "k"]],
+      [[1, "k"], [3, "."], [2, "g"], [3, "."], [1, "k"]],
+      [[1, "o"], [3, "."], [2, "o"], [3, "."], [1, "o"]],
+    ] },
+    { name: "🚁 Helikopter", rows: [
+      [[2, "."], [6, "k"], [2, "."]],
+      [[1, "."], [6, "r"], [3, "."]],
+      [[1, "."], [2, "w"], [4, "r"], [3, "r"]],
+      [[4, "."], [1, "k"], [5, "."]],
+      [[10, "k"]],
+    ] },
+    { name: "🚒 Pemadam", wheels: true, rows: [
+      [[10, "k"]],
+      [[10, "r"]],
+      [[6, "r"], [2, "w"], [2, "r"]],
+      [[1, "."], [5, "k"], [1, "."], [3, "r"]],
+      [[7, "."], [1, "b"], [2, "."]],
+    ] },
+    { name: "🏢 Gedung", rows: [
+      [[2, "."], [2, "b"], [2, "n"], [2, "b"], [2, "."]],
+      [[2, "."], [2, "w"], [2, "b"], [2, "w"], [2, "."]],
+      [[2, "."], [2, "w"], [2, "b"], [2, "w"], [2, "."]],
+      [[2, "."], [2, "w"], [2, "b"], [2, "w"], [2, "."]],
+      [[2, "."], [6, "b"], [2, "."]],
+    ] },
   ],
 };
 const PARTS = 5;
 const partsDone = (done, total) => Math.round(done * PARTS / Math.max(1, total));
+const lastBuild = {};
+function pickBuild(game) {
+  const opts = BUILDS[game].filter((b) => b !== lastBuild[game]);
+  return (lastBuild[game] = sample(opts, 1)[0]);
+}
 
-function buildView(game, done, fresh = false) {
-  const rows = BUILDS[game].map((row, i) => {
+function buildView(game, shape, done, fresh = false) {
+  const rows = shape.rows.map((row, i) => {
     const on = i < done ? (fresh && i === done - 1 ? " on new" : " on") : "";
     const cells = game === "minecraft"
       ? [...row].map((c) => h("div", { class: "px" + (c === "." ? " empty" : " mc-" + c) }))
       : row.map(([w, c]) => h("div", { class: "lb" + (c === "." ? " empty" : " lg-" + c), style: `flex:${w}` }));
-    return h("div", { class: "brow" + on }, cells, game === "lego" && i === 0 ? h("div", { class: "wheels" }, h("i"), h("i")) : null);
+    return h("div", { class: "brow" + on }, cells, shape.wheels && i === 0 ? h("div", { class: "wheels" }, h("i"), h("i")) : null);
   });
   return h("div", { class: "build " + (game === "minecraft" ? "mc-build" : "lg-build") },
-    h("div", { class: "build-label" }, `${game === "minecraft" ? "🏠 Rumah" : "🚗 Mobil"} · ${done}/${PARTS}`),
+    h("div", { class: "build-label" }, `${shape.name} · ${done}/${PARTS}`),
     h("div", { class: "build-stack" }, rows.reverse()));
 }
 
 function buildSkin(game, ctx, theme, looks, place) {
+  ctx.shape ||= pickBuild(game);
   const skin = {
     theme, place, tile: (i) => looks[i % looks.length],
-    side: buildView(game, partsDone(ctx.step, ctx.total)),
-    done: () => { const v = buildView(game, partsDone(ctx.step + 1, ctx.total), true); skin.side.replaceWith(v); skin.side = v; },
+    side: buildView(game, ctx.shape, partsDone(ctx.step, ctx.total)),
+    done: () => { const v = buildView(game, ctx.shape, partsDone(ctx.step + 1, ctx.total), true); skin.side.replaceWith(v); skin.side = v; },
   };
   return skin;
 }
@@ -775,7 +910,7 @@ function resultScreen(game, { stars, right }, items, ctx) {
   confetti(); good(); say(msg.replace(/[^\p{L}\s!]/gu, ""));
   render(h("div", { class: "card" },
     h("h1", {}, msg),
-    BUILDS[game] ? buildView(game, PARTS) : null,
+    ctx.shape ? buildView(game, ctx.shape, PARTS) : null,
     h("div", { class: "star-row" }, stars ? Array.from({ length: stars }, () => h("span", {}, "⭐")) : h("span", {}, "🌱")),
     h("p", { class: "sub" }, `${right} dari ${items.length} benar langsung · dapat ⭐ ${stars}`),
     h("p", {},
