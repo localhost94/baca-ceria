@@ -152,9 +152,42 @@ function poolFor(game, group) {
 
 /* ---------- progress ---------- */
 async function loadProgress() {
-  const rows = await api(`/players/${state.player.id}/progress?lang=${state.lang}`);
+  const [rows, passed] = await Promise.all([
+    api(`/players/${state.player.id}/progress?lang=${state.lang}`),
+    api(`/players/${state.player.id}/passed?lang=${state.lang}`).catch(() => []),
+  ]);
   state.progress = {};
   for (const r of rows) state.progress[r.game + ":" + r.item] = r;
+  state.passed = new Set(passed);
+}
+
+/* ---------- level (mode kunci) ---------- */
+// game tanpa free: true = jalur level berurutan per mode (baca / hitung) dan per bahasa.
+// Level terbuka kalau level sebelumnya lulus (satu ronde semua benar langsung),
+// atau tidak lebih tinggi dari level tertinggi yang sudah pernah dimainkan (pemain lama tidak tiba-tiba terkunci).
+const levelsOf = (math) => Object.keys(GAME_INFO).filter((g) => !GAME_INFO[g].free && !GAME_INFO[g].math === !math);
+const levelNo = (game) => levelsOf(GAME_INFO[game].math).indexOf(game) + 1;
+const nextLevel = (game) => levelsOf(GAME_INFO[game].math)[levelNo(game)];
+const played = (game) => Object.keys(state.progress).some((k) => k.startsWith(game + ":"));
+function unlocked(game) {
+  if (GAME_INFO[game].free) return true;
+  const track = levelsOf(GAME_INFO[game].math), n = levelNo(game);
+  const prev = track[n - 2];
+  return !prev || state.passed.has(prev) || track.slice(n - 1).some(played);
+}
+const gameTitle = (game) => (GAME_INFO[game].free ? GAME_INFO[game].title : `Level ${levelNo(game)} · ${GAME_INFO[game].title}`);
+function gameTile(g) {
+  const info = GAME_INFO[g];
+  if (learning()) return h("button", { class: `btn big ${info.color}`, onclick: () => groupScreen(g) }, h("span", { class: "ico" }, info.ico), LEARN[g].title);
+  if (!unlocked(g)) {
+    const b = h("button", { class: "btn big locked", onclick: () => {
+      bad(); say("Selesaikan level sebelumnya dulu");
+      b.classList.remove("wrong"); void b.offsetWidth; b.classList.add("wrong");
+    } }, h("span", { class: "ico" }, "🔒"), gameTitle(g));
+    return b;
+  }
+  return h("button", { class: `btn big ${info.color}`, onclick: () => groupScreen(g) },
+    h("span", { class: "ico" }, info.ico), gameTitle(g), state.passed.has(g) ? h("span", { class: "badge" }, "✅") : null);
 }
 // item yang sering salah / belum dicoba lebih sering muncul
 function weight(game, item) {
@@ -237,14 +270,22 @@ async function menuScreen() {
     toggleRow("mode", [["baca", "📖 Membaca"], ["hitung", "🔢 Berhitung"]], ""),
     toggleRow("study", [["belajar", "📘 Belajar"], ["kuis", "🎯 Kuis"]], " study"),
     h("h1", {}, learning() ? "Ayo belajar!" : state.mode === "hitung" ? "Ayo berhitung!" : "Mau main apa?"),
-    h("div", { class: "grid" }, Object.entries(GAME_INFO)
-      .filter(([g, info]) => !info.math === (state.mode === "baca") && (!learning() || LEARN[g]))
-      .map(([g, info]) =>
-        h("button", { class: `btn big ${info.color}`, onclick: () => groupScreen(g) },
-          h("span", { class: "ico" }, info.ico), learning() ? LEARN[g].title : info.title))));
+    ...menuGrids());
   say(learning() ? `Halo ${me.name}! Ayo belajar!` : state.mode === "hitung" ? `Halo ${me.name}! Ayo berhitung!` : `Halo ${me.name}! Mau main apa?`);
 }
 const learning = () => state.study === "belajar";
+// belajar: semua materi terbuka; kuis: jalur level (terkunci bertahap) + main bebas
+function menuGrids() {
+  const games = Object.keys(GAME_INFO).filter((g) => !GAME_INFO[g].math === (state.mode === "baca"));
+  if (learning()) return [h("div", { class: "grid" }, games.filter((g) => LEARN[g]).map(gameTile))];
+  const free = games.filter((g) => GAME_INFO[g].free);
+  return [
+    h("h2", { class: "section" }, "🏆 Level"),
+    h("div", { class: "grid" }, games.filter((g) => !GAME_INFO[g].free).map(gameTile)),
+    free.length ? h("h2", { class: "section" }, "🎮 Main Bebas") : null,
+    free.length ? h("div", { class: "grid" }, free.map(gameTile)) : null,
+  ];
+}
 // baris pilihan di menu (mode / study), disimpan di localStorage
 function toggleRow(key, opts, cls) {
   return h("div", { class: "langs" }, opts.map(([v, label]) =>
@@ -271,7 +312,7 @@ function groupScreen(game) {
   render(
     h("div", { class: "bar" }, h("button", { class: "btn small c-red", onclick: menuScreen }, "⬅"),
       h("div", { class: "stars" }, LANGS[state.lang].label)),
-    h("h1", {}, `${info.ico} ${learning() ? LEARN[game].title : info.title}`),
+    h("h1", {}, `${info.ico} ${learning() ? LEARN[game].title : gameTitle(game)}`),
     h("p", { class: "sub" }, "Pilih kategori"),
     h("div", { class: "grid" }, tiles.map(([g, t], i) =>
       h("button", { class: `btn big ${COLORS[i % COLORS.length]}`, onclick: () => (learning() ? learnScreen(game, g) : startGame(game, g)) },
@@ -817,7 +858,7 @@ function learnScreen(game, group, idx = 0) {
     h("div", { class: "learn-nav" },
       h("button", { class: "btn c-purple", disabled: idx === 0, onclick: () => learnScreen(game, group, idx - 1) }, "◀"),
       last
-        ? h("button", { class: "btn c-green", onclick: () => startGame(game, group) }, "🎯 Ayo kuis!")
+        ? h("button", { class: "btn c-green", disabled: !unlocked(game), onclick: () => startGame(game, group) }, unlocked(game) ? "🎯 Ayo kuis!" : "🔒 Kuis")
         : h("button", { class: "btn c-green", onclick: () => learnScreen(game, group, idx + 1) }, "▶")));
   body.append(...nodes);
   setTimeout(() => body.isConnected && play(), 300);
@@ -906,14 +947,29 @@ function learnSub({ a, b }, ctx, body) {
 
 /* ---------- result + parent ---------- */
 function resultScreen(game, { stars, right }, items, ctx) {
-  const msg = right === items.length ? "Hebat sekali! 🏆" : right >= Math.ceil(items.length / 2) ? "Bagus! 👏" : "Ayo coba lagi! 💪";
-  confetti(); good(); say(msg.replace(/[^\p{L}\s!]/gu, ""));
+  const perfect = right === items.length;
+  // jalur level: ronde sempurna = lulus; level berikutnya terbuka
+  const next = !GAME_INFO[game].free && nextLevel(game);
+  const wasLocked = next && !unlocked(next);
+  if (perfect && !GAME_INFO[game].free && !state.passed.has(game)) {
+    state.passed.add(game);
+    api(`/players/${state.player.id}/passed`, { method: "POST", body: { lang: state.lang, game } }).catch(() => {});
+  }
+  const opened = wasLocked && perfect;
+  const needAll = wasLocked && !perfect;
+  const msg = opened ? "Level baru terbuka! 🔓" : perfect ? "Hebat sekali! 🏆" : right >= Math.ceil(items.length / 2) ? "Bagus! 👏" : "Ayo coba lagi! 💪";
+  const hint = "Jawab semua dengan benar untuk membuka level berikutnya";
+  confetti(); good();
+  sayParts([[msg.replace(/[^\p{L}\s!]/gu, "").trim(), "id"], ...(needAll ? [[hint, "id"]] : [])]);
   render(h("div", { class: "card" },
     h("h1", {}, msg),
+    opened ? h("p", { class: "unlock" }, `🔓 ${gameTitle(next)}`) : null,
     ctx.shape ? buildView(game, ctx.shape, PARTS) : null,
     h("div", { class: "star-row" }, stars ? Array.from({ length: stars }, () => h("span", {}, "⭐")) : h("span", {}, "🌱")),
     h("p", { class: "sub" }, `${right} dari ${items.length} benar langsung · dapat ⭐ ${stars}`),
+    needAll ? h("p", { class: "sub" }, `🔒 ${hint}`) : null,
     h("p", {},
+      next && unlocked(next) ? h("button", { class: "btn c-purple", onclick: () => groupScreen(next) }, "Level berikutnya ⏭") : null, " ",
       h("button", { class: "btn c-green", onclick: () => startGame(game, ctx.group) }, "Main lagi ▶"), " ",
       h("button", { class: "btn c-blue", onclick: menuScreen }, "Menu"))));
 }
@@ -936,7 +992,7 @@ async function parentScreen() {
     h("h1", {}, `${state.player.avatar} ${state.player.name}`),
     s.games.length
       ? h("table", {}, h("tr", {}, ["Bahasa", "Permainan", "Jawaban", "Benar langsung", "Item"].map((t) => h("th", {}, t))),
-          s.games.map((g) => h("tr", {}, [langName(g.lang), GAME_INFO[g.game]?.title ?? g.game, g.total, `${Math.round(g.right / g.total * 100)}%`, g.items].map((t) => h("td", {}, String(t))))))
+          s.games.map((g) => h("tr", {}, [langName(g.lang), GAME_INFO[g.game] ? gameTitle(g.game) : g.game, g.total, `${Math.round(g.right / g.total * 100)}%`, g.items].map((t) => h("td", {}, String(t))))))
       : h("p", {}, "Belum ada data."),
     s.hardest.length ? h("p", {}, "Sering salah: " + s.hardest.map((x) => `${x.item} (${langName(x.lang)}, ${x.wrong}×)`).join(", ")) : null,
     h("p", {},

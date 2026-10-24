@@ -34,6 +34,16 @@ if (!hasColumn("players", "stars")) db.exec(`
   ALTER TABLE players ADD COLUMN stars INTEGER NOT NULL DEFAULT 0;
   UPDATE players SET stars = (SELECT COALESCE(SUM(correct), 0) FROM answers WHERE player_id = players.id);
 `);
+// level yang sudah lulus (satu ronde semua benar langsung); membuka level berikutnya
+db.exec(`
+  CREATE TABLE IF NOT EXISTS passed (
+    player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    game TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (player_id, lang, game)
+  );
+`);
 db.exec(`
   DROP INDEX IF EXISTS idx_answers_player;
   CREATE INDEX IF NOT EXISTS idx_answers_player_lang ON answers(player_id, lang, game, item);
@@ -80,6 +90,8 @@ const progress = db.query(`
 const insertAnswer = db.query("INSERT INTO answers (player_id, lang, game, item, correct, tries) VALUES (?, ?, ?, ?, ?, ?)");
 // benar langsung +1, tiap tap salah -1, saldo tidak pernah di bawah 0
 const addStars = db.query("UPDATE players SET stars = MAX(0, stars + ?) WHERE id = ?");
+const listPassed = db.query("SELECT game FROM passed WHERE player_id = ? AND lang = ?");
+const insertPassed = db.query("INSERT OR IGNORE INTO passed (player_id, lang, game) VALUES (?, ?, ?)");
 const summary = db.query(`
   SELECT lang, game, COUNT(*) AS total, SUM(correct) AS right, COUNT(DISTINCT item) AS items
   FROM answers WHERE player_id = ? GROUP BY lang, game ORDER BY lang, game
@@ -165,6 +177,16 @@ async function api(req: Request, url: URL, ip: string): Promise<Response> {
   if (parts[3] === "progress" && req.method === "GET") {
     const lang = url.searchParams.get("lang") ?? "id";
     return json(progress.all(id, LANGS.has(lang) ? lang : "id"));
+  }
+  if (parts[3] === "passed" && req.method === "GET") {
+    const lang = url.searchParams.get("lang") ?? "id";
+    return json((listPassed.all(id, LANGS.has(lang) ? lang : "id") as { game: string }[]).map((r) => r.game));
+  }
+  if (parts[3] === "passed" && req.method === "POST") {
+    const b = await req.json().catch(() => null) as { lang?: string; game?: string } | null;
+    if (!b?.game || !GAMES.has(b.game) || !b.lang || !LANGS.has(b.lang)) return json({ error: "bad level" }, 400);
+    insertPassed.run(id, b.lang, b.game);
+    return json({ ok: true }, 201);
   }
   if (parts[3] === "summary" && req.method === "GET") {
     return json({ games: summary.all(id), hardest: hardest.all(id) });

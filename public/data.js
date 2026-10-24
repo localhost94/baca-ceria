@@ -675,6 +675,7 @@ const STORIES = [
 const PROMPTS = [
   "Siapa yang mau main?", "Mau main apa?", "Pilih kategori", "Huruf", "Tangkap huruf", "Bagus!",
   "Suku kata apa yang hilang?", "Gambar apa ini? Pilih katanya", "Hebat sekali!", "Ayo coba lagi!",
+  "Level baru terbuka!", "Selesaikan level sebelumnya dulu", "Jawab semua dengan benar untuk membuka level berikutnya",
 ];
 // pujian yang diucapkan acak setiap jawaban benar
 const PRAISE = ["Bagus!", "Hebat!", "Pintar!", "Benar!", "Keren!", "Bagus sekali!", "Kamu hebat!"];
@@ -690,29 +691,30 @@ const AR_NAMES = {
   "ن": "نُون", "ه": "هَاء", "و": "وَاو", "ي": "يَاء",
 };
 const AVATARS = ["🐻", "🐰", "🦊", "🐼", "🐸", "🦁", "🐧", "🐙"];
+// urutan = urutan level (mode kunci); free: true = Main Bebas, selalu terbuka
 const GAME_INFO = {
-  huruf: { title: "Level 1 · Huruf", ico: "🔤", color: "c-pink", hint: "Pilih gambar yang diawali huruf ini" },
-  suku: { title: "Level 2 · Suku Kata", ico: "🧩", color: "c-blue", hint: "Lengkapi suku kata yang hilang" },
-  tebak: { title: "Level 3 · Tebak Kata", ico: "🖼️", color: "c-green", hint: "Pilih kata untuk gambar ini" },
-  susun: { title: "Level 4 · Susun Huruf", ico: "🔡", color: "c-yellow", hint: "Susun huruf menjadi kata" },
-  dua: { title: "Level 5 · Dua Kata", ico: "✌️", color: "c-purple", hint: "Susun dua kata ini" },
-  kalimat: { title: "Level 6 · Kalimat", ico: "📝", color: "c-red", hint: "Susun kata menjadi kalimat" },
-  tangkap: { title: "Level 7 · Tangkap Huruf", ico: "🫧", color: "c-blue", hint: "Tangkap gelembung huruf ini" },
+  huruf: { title: "Huruf", ico: "🔤", color: "c-pink", hint: "Pilih gambar yang diawali huruf ini" },
+  suku: { title: "Suku Kata", ico: "🧩", color: "c-blue", hint: "Lengkapi suku kata yang hilang" },
+  tebak: { title: "Tebak Kata", ico: "🖼️", color: "c-green", hint: "Pilih kata untuk gambar ini" },
+  susun: { title: "Susun Huruf", ico: "🔡", color: "c-yellow", hint: "Susun huruf menjadi kata" },
+  dua: { title: "Dua Kata", ico: "✌️", color: "c-purple", hint: "Susun dua kata ini" },
+  kalimat: { title: "Kalimat", ico: "📝", color: "c-red", hint: "Susun kata menjadi kalimat" },
+  tangkap: { free: true, title: "Tangkap Huruf", ico: "🫧", color: "c-blue", hint: "Tangkap gelembung huruf ini" },
   // baca cerita (tier = tingkat di STORIES): satu ronde = satu cerita + beberapa pertanyaan
-  cerita1: { tier: 1, title: "Level 8 · Cerita Pendek", ico: "📗", color: "c-green", hint: "Baca ceritanya, lalu jawab pertanyaannya" },
-  cerita2: { tier: 2, title: "Level 9 · Cerita Sedang", ico: "📘", color: "c-purple", hint: "Baca ceritanya, lalu jawab pertanyaannya" },
-  cerita3: { tier: 3, title: "Level 10 · Cerita Panjang", ico: "📚", color: "c-pink", hint: "Baca ceritanya, lalu jawab pertanyaannya" },
-  minecraft: { title: "Minecraft · Balok Huruf", ico: "⛏️", color: "c-green", hint: "Susun balok huruf menjadi kata" },
-  lego: { title: "Lego · Bata Kalimat", ico: "🧱", color: "c-red", hint: "Pasang bata kata menjadi kalimat" },
+  cerita1: { tier: 1, title: "Cerita Pendek", ico: "📗", color: "c-green", hint: "Baca ceritanya, lalu jawab pertanyaannya" },
+  cerita2: { tier: 2, title: "Cerita Sedang", ico: "📘", color: "c-purple", hint: "Baca ceritanya, lalu jawab pertanyaannya" },
+  cerita3: { tier: 3, title: "Cerita Panjang", ico: "📚", color: "c-pink", hint: "Baca ceritanya, lalu jawab pertanyaannya" },
+  minecraft: { free: true, title: "Minecraft · Balok Huruf", ico: "⛏️", color: "c-green", hint: "Susun balok huruf menjadi kata" },
+  lego: { free: true, title: "Lego · Bata Kalimat", ico: "🧱", color: "c-red", hint: "Pasang bata kata menjadi kalimat" },
   // berhitung (math: true): angka 1–20, kategori = tema benda yang dihitung (MATH_GROUPS)
-  hitung: { math: true, title: "Level 1 · Berapa Banyak?", ico: "🍎", color: "c-pink", hint: "Hitung bendanya, lalu pilih angkanya" },
-  kenal: { math: true, title: "Level 2 · Kenal Angka", ico: "🔢", color: "c-blue", hint: "Pilih yang jumlahnya sama dengan angka ini" },
-  banding: { math: true, title: "Level 3 · Banyak Sedikit", ico: "⚖️", color: "c-green", hint: "Bandingkan kedua kelompok" },
-  urut: { math: true, title: "Level 4 · Urutkan Angka", ico: "📶", color: "c-yellow", hint: "Urutkan dari yang paling kecil" },
-  hilang: { math: true, title: "Level 5 · Angka Hilang", ico: "❓", color: "c-purple", hint: "Angka berapa yang hilang?" },
-  tambah: { math: true, title: "Level 6 · Penjumlahan", ico: "➕", color: "c-red", hint: "Gabungkan, ada berapa semuanya?" },
-  kurang: { math: true, title: "Level 7 · Pengurangan", ico: "➖", color: "c-blue", hint: "Ada yang pergi, sisa berapa?" },
-  tangkapangka: { math: true, title: "Level 8 · Tangkap Angka", ico: "🫧", color: "c-green", hint: "Hitung, lalu tangkap gelembung angkanya" },
+  hitung: { math: true, title: "Berapa Banyak?", ico: "🍎", color: "c-pink", hint: "Hitung bendanya, lalu pilih angkanya" },
+  kenal: { math: true, title: "Kenal Angka", ico: "🔢", color: "c-blue", hint: "Pilih yang jumlahnya sama dengan angka ini" },
+  banding: { math: true, title: "Banyak Sedikit", ico: "⚖️", color: "c-green", hint: "Bandingkan kedua kelompok" },
+  urut: { math: true, title: "Urutkan Angka", ico: "📶", color: "c-yellow", hint: "Urutkan dari yang paling kecil" },
+  hilang: { math: true, title: "Angka Hilang", ico: "❓", color: "c-purple", hint: "Angka berapa yang hilang?" },
+  tambah: { math: true, title: "Penjumlahan", ico: "➕", color: "c-red", hint: "Gabungkan, ada berapa semuanya?" },
+  kurang: { math: true, title: "Pengurangan", ico: "➖", color: "c-blue", hint: "Ada yang pergi, sisa berapa?" },
+  tangkapangka: { free: true, math: true, title: "Tangkap Angka", ico: "🫧", color: "c-green", hint: "Hitung, lalu tangkap gelembung angkanya" },
 };
 // tema benda untuk mode berhitung; emo = benda yang bisa muncul
 const MATH_GROUPS = {

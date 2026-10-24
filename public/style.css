@@ -218,3 +218,11 @@ td, th { padding: 6px 8px; border-bottom: 1px solid #eee; }
 .learn-nav { display: flex; gap: 16px; justify-content: center; width: 100%; max-width: 760px; }
 .learn-nav .btn { flex: 1; font-size: 2rem; }
 .btn:disabled { opacity: .35; cursor: default; }
+
+/* ---------- level (mode kunci) ---------- */
+.section { width: 100%; max-width: 760px; margin: 8px 0 -4px; font-size: 1.6rem; }
+.btn.big { position: relative; }
+.btn.big .badge { position: absolute; top: 8px; right: 10px; font-size: 1.4rem; }
+.btn.locked { background: #c9c3d9; color: #6d6680; }
+.btn.locked.wrong { animation: shake .4s; }
+.unlock { font-size: 1.6rem; font-weight: 800; color: var(--purple); margin: 4px 0; animation: pop .5s; }
