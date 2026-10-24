@@ -65,6 +65,7 @@ setInterval(() => {
 const tooMany = (retry: number) =>
   Response.json({ error: "terlalu banyak permintaan, coba lagi sebentar" }, { status: 429, headers: { "Retry-After": String(retry) } });
 const GAMES = new Set(["huruf", "suku", "tebak", "susun", "dua", "kalimat", "tangkap", "minecraft", "lego",
+  "cerita1", "cerita2", "cerita3",
   "hitung", "kenal", "banding", "urut", "hilang", "tambah", "kurang", "tangkapangka"]);
 const LANGS = new Set(["id", "en", "ar"]);
 

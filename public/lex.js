@@ -37,15 +37,28 @@ function buildLex(lang) {
       syl: ar ? arSyllables(raw) : raw.split("-"), letters: ar ? arLetters(raw) : [...word] };
   });
   const rows = (list) => list.filter((r) => r[col]).map((r) => ({ key: r[col], text: r[col], pic: r[0], group: r[1] }));
-  return { lang, words, phrases: rows(PHRASES), sentences: rows(SENTENCES) };
+  // pilihan jawaban cerita = emoji CONCEPTS; kata dalam bahasa ini ditampilkan & diucapkan (kosong = emoji saja)
+  const wordOf = new Map(words.map((w) => [w.pic, w.word]));
+  const stories = STORIES.filter((s) => s[lang]).map((s) => {
+    const [title, text, ...asks] = s[lang];
+    const story = { key: title, title, pic: s.pic, group: s.group, tier: s.tier, sentences: sentencesOf(text) };
+    story.qs = s.qs.map((opts, n) => ({ key: `${title} #${n + 1}`, n, text: asks[n], story, group: s.group,
+      opts: opts.map((pic) => ({ pic, word: wordOf.get(pic) || "" })) }));
+    return story;
+  });
+  return { lang, words, phrases: rows(PHRASES), sentences: rows(SENTENCES), stories };
 }
+// cerita dipecah per kalimat: diucapkan satu-satu (batas teks tts 200 huruf) dan disorot saat dibacakan
+const sentencesOf = (text) => text.match(/[^.!?؟]+[.!?؟]*/g).map((s) => s.trim()).filter(Boolean);
 
 // semua teks yang mungkin diucapkan dalam satu bahasa (untuk menyiapkan audio)
 function speechTexts(lang) {
   const L = buildLex(lang), out = new Set();
   for (const w of L.words) { out.add(w.word); w.syl.forEach((s) => out.add(s)); w.letters.forEach((s) => out.add(s)); }
   for (const p of [...L.phrases, ...L.sentences]) { out.add(p.text); p.text.split(" ").forEach((t) => out.add(t)); }
+  for (const s of L.stories) { out.add(s.title); s.sentences.forEach((t) => out.add(t)); s.qs.forEach((q) => out.add(q.text)); }
   for (const l of ALPHABETS[lang]) out.add(letterNameOf(l, lang));
-  if (lang === "id") { [...PROMPTS, ...PRAISE].forEach((p) => out.add(p)); Object.values(GAME_INFO).forEach((g) => out.add(g.hint)); }
+  for (let n = 0; n <= 20; n++) out.add(String(n));
+  if (lang === "id") { [...PROMPTS, ...PRAISE, ...MATH_PROMPTS].forEach((p) => out.add(p)); Object.values(GAME_INFO).forEach((g) => out.add(g.hint)); }
   return [...out];
 }

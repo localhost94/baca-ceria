@@ -60,15 +60,18 @@ function playTts(text, lang, token) {
   });
 }
 // parts: [[teks, kodeBahasa], ...] diucapkan berurutan; instruksi pakai "id", isi pakai bahasa aktif
-async function sayParts(parts) {
+// onStep(i): dipanggil sebelum bagian ke-i diucapkan, lalu onStep(-1) saat selesai/dipotong
+async function sayParts(parts, onStep) {
   const token = ++speakToken;
   currentAudio?.pause();
   if ("speechSynthesis" in window) speechSynthesis.cancel();
-  for (const [text, lang] of parts) {
-    if (token !== speakToken) return;
+  for (const [i, [text, lang]] of parts.entries()) {
+    if (token !== speakToken) break;
+    onStep?.(i);
     try { await playTts(text, lang, token); }
     catch { if (token === speakToken) await browserSpeak(text, lang); }
   }
+  onStep?.(-1);
 }
 const say = (text, lang = "id") => sayParts([[text, lang]]);
 const sayL = (text) => say(text, LEX.lang);
@@ -127,6 +130,8 @@ const keyOf = (it) => (typeof it === "string" ? it : it.key);
 function poolFor(game, group) {
   if (GAME_INFO[game]?.math) return mathPool(game); // kategori berhitung hanya mengganti tema benda
   const inGroup = (x) => !group || x.group === group;
+  const tier = GAME_INFO[game]?.tier;
+  if (tier) return LEX.stories.filter((s) => s.tier === tier && inGroup(s));
   const words = LEX.words.filter(inGroup);
   switch (game) {
     case "huruf": case "tangkap": return [...new Set(words.map((w) => w.initial))];
@@ -152,10 +157,10 @@ function weight(game, item) {
   const p = state.progress[game + ":" + item];
   return p ? Math.max(1, 3 + p.wrong - p.right) : 4;
 }
-function pickItems(game, items, n) {
+function pickItems(game, items, n, w = (it) => weight(game, keyOf(it))) {
   const pool = [...items], out = [];
   while (out.length < n && pool.length) {
-    const ws = pool.map((it) => weight(game, keyOf(it)));
+    const ws = pool.map(w);
     let r = Math.random() * ws.reduce((a, b) => a + b, 0), i = 0;
     while ((r -= ws[i]) > 0) i++;
     out.push(pool.splice(i, 1)[0]);
@@ -240,7 +245,7 @@ async function menuScreen() {
 
 /* ---------- game engine ---------- */
 const MAKERS = { huruf: qLetter, suku: qSyllable, tebak: qWord, susun: qBuild, dua: qTokens, kalimat: qTokens, tangkap: qCatch,
-  minecraft: qMinecraft, lego: qLego,
+  minecraft: qMinecraft, lego: qLego, cerita1: qStory, cerita2: qStory, cerita3: qStory,
   hitung: qCount, kenal: qNumeral, banding: qCompare, urut: qOrder, hilang: qMissing, tambah: qAdd, kurang: qSub, tangkapangka: qCatchNum };
 const groupsOf = (game) => (GAME_INFO[game].math ? MATH_GROUPS : GROUPS);
 const COLORS = ["c-pink", "c-blue", "c-green", "c-yellow", "c-purple", "c-red"];
@@ -248,7 +253,8 @@ const MIN_ITEMS = 3;
 
 function groupScreen(game) {
   const info = GAME_INFO[game];
-  const groups = info.math ? Object.entries(MATH_GROUPS) : Object.entries(GROUPS).filter(([g]) => poolFor(game, g).length >= MIN_ITEMS);
+  const min = info.tier ? 1 : MIN_ITEMS; // cerita: tiap kategori cukup satu cerita
+  const groups = info.math ? Object.entries(MATH_GROUPS) : Object.entries(GROUPS).filter(([g]) => poolFor(game, g).length >= min);
   const tiles = [["", { title: "Campur", ico: "🎲" }], ...groups];
   render(
     h("div", { class: "bar" }, h("button", { class: "btn small c-red", onclick: menuScreen }, "⬅"),
@@ -257,12 +263,15 @@ function groupScreen(game) {
     h("p", { class: "sub" }, "Pilih kategori"),
     h("div", { class: "grid" }, tiles.map(([g, t], i) =>
       h("button", { class: `btn big ${COLORS[i % COLORS.length]}`, onclick: () => startGame(game, g) },
-        h("span", { class: "ico" }, t.ico), t.title, g && !info.math ? h("small", { class: "count" }, `${poolFor(game, g).length} item`) : null))));
+        h("span", { class: "ico" }, t.ico), t.title, g && !info.math ? h("small", { class: "count" }, `${poolFor(game, g).length} ${info.tier ? "cerita" : "item"}`) : null))));
   say("Pilih kategori");
 }
 
 function startGame(game, group = "") {
-  const items = pickItems(game, poolFor(game, group), ROUND);
+  // cerita: pilih satu cerita (yang pertanyaannya sering salah lebih mungkin), ronde = pertanyaan-pertanyaannya
+  const items = GAME_INFO[game].tier
+    ? pickItems(game, poolFor(game, group), 1, (s) => Math.max(...s.qs.map((q) => weight(game, q.key))))[0].qs
+    : pickItems(game, poolFor(game, group), ROUND);
   runRound(game, items, 0, { stars: 0, right: 0 }, { group });
 }
 
@@ -373,11 +382,11 @@ function buildTokens(tokens, full, pic, body, finish, info, wide, skin = null) {
     const t = h("button", { class: "tile" + (wide ? " wide" : "") + (look ? " " + look : ""), textContent: tok, onclick: () => {
       if (t.classList.contains("used")) return;
       if (tok === tokens[next]) {
-        skin?.place();
+        skin?.place?.();
         sayL(tok); slots[next].textContent = tok; slots[next].classList.add("filled");
         if (look) slots[next].classList.add(...look.split(" "), "placed");
         t.classList.add("used"); next++;
-        if (next === tokens.length) { skin?.done(); finish(tries, later(600, () => sayL(full))); }
+        if (next === tokens.length) { skin?.done?.(); finish(tries, later(600, () => sayL(full))); }
       } else { tries++; miss(); t.classList.remove("wrong"); void t.offsetWidth; t.classList.add("wrong"); }
     } });
     return t;
@@ -438,6 +447,29 @@ function qMinecraft(w, body, finish, info, ctx) {
 function qLego(p, body, finish, info, ctx) {
   const skin = buildSkin("lego", ctx, "lg", ["brick lg-r", "brick lg-b", "brick lg-y", "brick lg-g", "brick lg-o"], klik);
   buildTokens(p.text.split(" "), p.text, p.pic, body, finish, info, true, skin);
+}
+
+/* ---------- baca cerita ---------- */
+// cerita tetap tampil di tiap pertanyaan; ketuk kalimat = dibacakan, 🔊 = semua kalimat dibacakan sambil disorot
+function qStory(q, body, finish, info) {
+  const s = q.story, ans = q.opts[0];
+  const read = (idx) => sayParts(idx.map((i) => [s.sentences[i], LEX.lang]),
+    (k) => lines.forEach((el, i) => el.classList.toggle("now", k >= 0 && i === idx[k])));
+  const lines = s.sentences.map((t, i) => h("span", { class: "sent", onclick: () => read([i]) }, t));
+  const opts = shuffle(q.opts.map((o, i) => ({ key: i, say: o.word,
+    node: [h("span", { class: "opt-pic" }, o.pic), o.word ? h("span", { class: "opt-word" }, o.word) : null] })));
+  const qEl = h("p", { class: "question", onclick: () => sayL(q.text) }, "❓ ", q.text);
+  body.append(
+    promptEl(info.hint),
+    h("div", { class: "story" },
+      h("div", { class: "story-head" }, h("span", { class: "story-pic" }, s.pic), h("h2", {}, s.title),
+        h("button", { class: "btn small c-blue", onclick: () => read(s.sentences.map((_, i) => i)) }, "🔊")),
+      h("p", { class: "story-text" }, lines.flatMap((el, i) => (i ? [" ", el] : [el])))),
+    qEl,
+    choiceButtons(opts, (o) => o.key === 0, (tries) => finish(tries, later(400, () => ans.word && sayL(ans.word)))));
+  // pertanyaan berikutnya: cerita sudah dibaca, langsung arahkan ke pertanyaannya
+  if (q.n) setTimeout(() => qEl.scrollIntoView({ block: "center", behavior: "smooth" }), 100);
+  setTimeout(() => sayParts(q.n ? [[q.text, LEX.lang]] : [[info.hint, "id"], [q.text, LEX.lang]]), 300);
 }
 
 function qCatch(letter, body, finish, info) {
@@ -598,7 +630,7 @@ function qCatchNum(it, body, finish, info, ctx) {
 
 /* ---------- result + parent ---------- */
 function resultScreen(game, { stars, right }, items, ctx) {
-  const msg = right === items.length ? "Hebat sekali! 🏆" : right >= 3 ? "Bagus! 👏" : "Ayo coba lagi! 💪";
+  const msg = right === items.length ? "Hebat sekali! 🏆" : right >= Math.ceil(items.length / 2) ? "Bagus! 👏" : "Ayo coba lagi! 💪";
   confetti(); good(); say(msg.replace(/[^\p{L}\s!]/gu, ""));
   render(h("div", { class: "card" },
     h("h1", {}, msg),

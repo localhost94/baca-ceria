@@ -3,3 +3,4 @@ baca.backup-*.sqlite
 audio-cache/
 node_modules
 .env
+.superpowers/
