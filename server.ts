@@ -29,6 +29,11 @@ const hasColumn = (table: string, col: string) =>
   (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
 if (!hasColumn("players", "lang")) db.exec("ALTER TABLE players ADD COLUMN lang TEXT NOT NULL DEFAULT 'id'");
 if (!hasColumn("answers", "lang")) db.exec("ALTER TABLE answers ADD COLUMN lang TEXT NOT NULL DEFAULT 'id'");
+// migrasi: saldo bintang (bisa turun saat salah); awalnya = jumlah jawaban benar langsung
+if (!hasColumn("players", "stars")) db.exec(`
+  ALTER TABLE players ADD COLUMN stars INTEGER NOT NULL DEFAULT 0;
+  UPDATE players SET stars = (SELECT COALESCE(SUM(correct), 0) FROM answers WHERE player_id = players.id);
+`);
 db.exec(`
   DROP INDEX IF EXISTS idx_answers_player;
   CREATE INDEX IF NOT EXISTS idx_answers_player_lang ON answers(player_id, lang, game, item);
@@ -59,15 +64,11 @@ setInterval(() => {
 }, 60_000).unref();
 const tooMany = (retry: number) =>
   Response.json({ error: "terlalu banyak permintaan, coba lagi sebentar" }, { status: 429, headers: { "Retry-After": String(retry) } });
-const GAMES = new Set(["huruf", "suku", "tebak", "susun", "dua", "kalimat", "tangkap"]);
+const GAMES = new Set(["huruf", "suku", "tebak", "susun", "dua", "kalimat", "tangkap", "minecraft", "lego",
+  "hitung", "kenal", "banding", "urut", "hilang", "tambah", "kurang", "tangkapangka"]);
 const LANGS = new Set(["id", "en", "ar"]);
 
-const listPlayers = db.query(`
-  SELECT p.id, p.name, p.avatar, p.lang,
-         COALESCE(SUM(a.correct), 0) AS stars
-  FROM players p LEFT JOIN answers a ON a.player_id = p.id
-  GROUP BY p.id ORDER BY p.id
-`);
+const listPlayers = db.query("SELECT id, name, avatar, lang, stars FROM players ORDER BY id");
 const insertPlayer = db.query("INSERT INTO players (name, avatar) VALUES (?, ?) RETURNING id, name, avatar, lang");
 const updateLang = db.query("UPDATE players SET lang = ? WHERE id = ?");
 const deletePlayer = db.query("DELETE FROM players WHERE id = ?");
@@ -76,6 +77,8 @@ const progress = db.query(`
   FROM answers WHERE player_id = ? AND lang = ? GROUP BY game, item
 `);
 const insertAnswer = db.query("INSERT INTO answers (player_id, lang, game, item, correct, tries) VALUES (?, ?, ?, ?, ?, ?)");
+// benar langsung +1, tiap tap salah -1, saldo tidak pernah di bawah 0
+const addStars = db.query("UPDATE players SET stars = MAX(0, stars + ?) WHERE id = ?");
 const summary = db.query(`
   SELECT lang, game, COUNT(*) AS total, SUM(correct) AS right, COUNT(DISTINCT item) AS items
   FROM answers WHERE player_id = ? GROUP BY lang, game ORDER BY lang, game
@@ -170,7 +173,12 @@ async function api(req: Request, url: URL, ip: string): Promise<Response> {
       { lang?: string; game?: string; item?: string; correct?: boolean; tries?: number } | null;
     if (!b?.game || !GAMES.has(b.game) || !b.item) return json({ error: "bad answer" }, 400);
     const lang = b.lang && LANGS.has(b.lang) ? b.lang : "id";
-    insertAnswer.run(id, lang, b.game, String(b.item).slice(0, 80), b.correct ? 1 : 0, Math.max(1, b.tries ?? 1));
+    const tries = Math.min(50, Math.max(1, Math.floor(Number(b.tries) || 1)));
+    const correct = tries === 1 ? 1 : 0;
+    db.transaction(() => {
+      insertAnswer.run(id, lang, b.game, String(b.item).slice(0, 80), correct, tries);
+      addStars.run(correct - (tries - 1), id);
+    })();
     return json({ ok: true }, 201);
   }
   return json({ error: "not found" }, 404);
