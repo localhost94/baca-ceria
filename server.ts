@@ -36,6 +36,29 @@ db.exec(`
 `);
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
+
+/* ---------- rate limit per IP (fixed window, in-memory) ---------- */
+const LIMITS = {
+  api: { max: 300, windowMs: 60_000 },          // semua /api/*
+  ttsGen: { max: 30, windowMs: 60_000 },        // tts yang belum ada di cache (spawn edge-tts)
+  ttsGenAll: { max: 200, windowMs: 60_000 },    // total spawn edge-tts semua IP
+  newPlayer: { max: 20, windowMs: 3_600_000 },  // POST /api/players
+};
+const hits = new Map<string, { count: number; reset: number }>();
+function limited(kind: keyof typeof LIMITS, key: string): number {
+  const { max, windowMs } = LIMITS[kind];
+  const now = Date.now();
+  const k = kind + ":" + key;
+  let h = hits.get(k);
+  if (!h || h.reset <= now) hits.set(k, h = { count: 0, reset: now + windowMs });
+  return ++h.count > max ? Math.ceil((h.reset - now) / 1000) : 0;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, h] of hits) if (h.reset <= now) hits.delete(k);
+}, 60_000).unref();
+const tooMany = (retry: number) =>
+  Response.json({ error: "terlalu banyak permintaan, coba lagi sebentar" }, { status: 429, headers: { "Retry-After": String(retry) } });
 const GAMES = new Set(["huruf", "suku", "tebak", "susun", "dua", "kalimat", "tangkap"]);
 const LANGS = new Set(["id", "en", "ar"]);
 
@@ -69,11 +92,13 @@ const AUDIO_DIR = join(import.meta.dir, "audio-cache");
 const EDGE_TTS = process.env.EDGE_TTS ?? Bun.which("edge-tts") ?? join(process.env.HOME ?? "", ".local/bin/edge-tts");
 const inflight = new Map<string, Promise<boolean>>();
 
-async function ttsFile(lang: string, text: string): Promise<string | null> {
+async function ttsFile(lang: string, text: string, ip: string): Promise<string | number | null> {
   const hash = new Bun.CryptoHasher("sha1").update(lang + "\n" + text).digest("hex").slice(0, 16);
   const path = join(AUDIO_DIR, lang, hash + ".mp3");
   if (await Bun.file(path).exists()) return path;
   if (!inflight.has(path)) {
+    const retry = limited("ttsGen", ip) || limited("ttsGenAll", "*");
+    if (retry) return retry;
     inflight.set(path, (async () => {
       await mkdir(join(AUDIO_DIR, lang), { recursive: true });
       const tmp = path + ".tmp.mp3";
@@ -92,14 +117,17 @@ async function ttsFile(lang: string, text: string): Promise<string | null> {
   return (await inflight.get(path)) ? path : null;
 }
 
-async function api(req: Request, url: URL): Promise<Response> {
+async function api(req: Request, url: URL, ip: string): Promise<Response> {
+  const retry = limited("api", ip);
+  if (retry) return tooMany(retry);
   const parts = url.pathname.split("/").filter(Boolean); // ["api", "players", id, ...]
   if (parts[1] === "tts") {
     if (parts[2] === "status") return json({ ok: await Bun.file(EDGE_TTS).exists() });
     const lang = url.searchParams.get("lang") ?? "";
     const text = (url.searchParams.get("text") ?? "").trim();
     if (!VOICES[lang] || !text || text.length > 200) return json({ error: "bad tts request" }, 400);
-    const path = await ttsFile(lang, text);
+    const path = await ttsFile(lang, text, ip);
+    if (typeof path === "number") return tooMany(path);
     if (!path) return json({ error: "tts unavailable" }, 503);
     return new Response(Bun.file(path), { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=31536000, immutable" } });
   }
@@ -108,6 +136,8 @@ async function api(req: Request, url: URL): Promise<Response> {
   if (parts.length === 2) {
     if (req.method === "GET") return json(listPlayers.all());
     if (req.method === "POST") {
+      const retry = limited("newPlayer", ip);
+      if (retry) return tooMany(retry);
       const body = await req.json().catch(() => null) as { name?: string; avatar?: string } | null;
       const name = body?.name?.trim().slice(0, 20);
       if (!name) return json({ error: "name required" }, 400);
@@ -146,12 +176,22 @@ async function api(req: Request, url: URL): Promise<Response> {
   return json({ error: "not found" }, 404);
 }
 
+// IP asli klien: di belakang reverse proxy lokal (Caddy) pakai X-Forwarded-For entri terakhir
+function clientIp(req: Request, server: Bun.Server): string {
+  const remote = server.requestIP(req)?.address ?? "?";
+  const isLocal = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+  const xff = req.headers.get("x-forwarded-for");
+  return isLocal && xff ? xff.split(",").pop()!.trim() : remote;
+}
+
 Bun.serve({
   port: PORT,
-  async fetch(req) {
+  hostname: process.env.HOST ?? "0.0.0.0",
+  maxRequestBodySize: 16 * 1024,
+  async fetch(req, server) {
     const url = new URL(req.url);
     try {
-      if (url.pathname.startsWith("/api/")) return await api(req, url);
+      if (url.pathname.startsWith("/api/")) return await api(req, url, clientIp(req, server));
       const rel = normalize(url.pathname === "/" ? "/index.html" : url.pathname);
       if (rel.includes("..")) return new Response("Forbidden", { status: 403 });
       const file = Bun.file(join(PUBLIC, rel));
