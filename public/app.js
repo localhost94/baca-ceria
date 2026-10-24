@@ -1,7 +1,11 @@
 const $app = document.getElementById("app");
 const ROUND = 5;
-const state = { player: null, progress: {}, lang: "id", mode: "baca" }; // mode menu: baca | hitung
-try { if (localStorage.getItem("mode") === "hitung") state.mode = "hitung"; } catch {}
+// mode menu: baca | hitung; study: kuis (permainan berbintang) | belajar (kartu materi tanpa skor)
+const state = { player: null, progress: {}, lang: "id", mode: "baca", study: "kuis" };
+try {
+  if (localStorage.getItem("mode") === "hitung") state.mode = "hitung";
+  if (localStorage.getItem("study") === "belajar") state.study = "belajar";
+} catch {}
 let LEX = null; // konten bahasa aktif, dibangun dari data.js
 
 /* ---------- util ---------- */
@@ -230,17 +234,25 @@ async function menuScreen() {
     h("div", { class: "langs" }, Object.entries(LANGS).map(([code, l]) =>
       h("button", { class: "lang" + (code === state.lang ? " sel" : ""), onclick: () => setLang(code) }, l.label))),
     noVoice ? h("p", { class: "warn" }, `Suara ${LANGS[state.lang].label} belum tersedia. Teks tetap tampil.`) : null,
-    h("div", { class: "langs" }, [["baca", "📖 Membaca"], ["hitung", "🔢 Berhitung"]].map(([m, label]) =>
-      h("button", { class: "lang mode" + (m === state.mode ? " sel" : ""), onclick: () => {
-        state.mode = m;
-        try { localStorage.setItem("mode", m); } catch {}
-        menuScreen();
-      } }, label))),
-    h("h1", {}, state.mode === "hitung" ? "Ayo berhitung!" : "Mau main apa?"),
-    h("div", { class: "grid" }, Object.entries(GAME_INFO).filter(([, info]) => !info.math === (state.mode === "baca")).map(([g, info]) =>
-      h("button", { class: `btn big ${info.color}`, onclick: () => groupScreen(g) },
-        h("span", { class: "ico" }, info.ico), info.title))));
-  say(state.mode === "hitung" ? `Halo ${me.name}! Ayo berhitung!` : `Halo ${me.name}! Mau main apa?`);
+    toggleRow("mode", [["baca", "📖 Membaca"], ["hitung", "🔢 Berhitung"]], ""),
+    toggleRow("study", [["belajar", "📘 Belajar"], ["kuis", "🎯 Kuis"]], " study"),
+    h("h1", {}, learning() ? "Ayo belajar!" : state.mode === "hitung" ? "Ayo berhitung!" : "Mau main apa?"),
+    h("div", { class: "grid" }, Object.entries(GAME_INFO)
+      .filter(([g, info]) => !info.math === (state.mode === "baca") && (!learning() || LEARN[g]))
+      .map(([g, info]) =>
+        h("button", { class: `btn big ${info.color}`, onclick: () => groupScreen(g) },
+          h("span", { class: "ico" }, info.ico), learning() ? LEARN[g].title : info.title))));
+  say(learning() ? `Halo ${me.name}! Ayo belajar!` : state.mode === "hitung" ? `Halo ${me.name}! Ayo berhitung!` : `Halo ${me.name}! Mau main apa?`);
+}
+const learning = () => state.study === "belajar";
+// baris pilihan di menu (mode / study), disimpan di localStorage
+function toggleRow(key, opts, cls) {
+  return h("div", { class: "langs" }, opts.map(([v, label]) =>
+    h("button", { class: "lang mode" + cls + (v === state[key] ? " sel" : ""), onclick: () => {
+      state[key] = v;
+      try { localStorage.setItem(key, v); } catch {}
+      menuScreen();
+    } }, label)));
 }
 
 /* ---------- game engine ---------- */
@@ -259,10 +271,10 @@ function groupScreen(game) {
   render(
     h("div", { class: "bar" }, h("button", { class: "btn small c-red", onclick: menuScreen }, "⬅"),
       h("div", { class: "stars" }, LANGS[state.lang].label)),
-    h("h1", {}, `${info.ico} ${info.title}`),
+    h("h1", {}, `${info.ico} ${learning() ? LEARN[game].title : info.title}`),
     h("p", { class: "sub" }, "Pilih kategori"),
     h("div", { class: "grid" }, tiles.map(([g, t], i) =>
-      h("button", { class: `btn big ${COLORS[i % COLORS.length]}`, onclick: () => startGame(game, g) },
+      h("button", { class: `btn big ${COLORS[i % COLORS.length]}`, onclick: () => (learning() ? learnScreen(game, g) : startGame(game, g)) },
         h("span", { class: "ico" }, t.ico), t.title, g && !info.math ? h("small", { class: "count" }, `${poolFor(game, g).length} ${info.tier ? "cerita" : "item"}`) : null))));
   say("Pilih kategori");
 }
@@ -626,6 +638,135 @@ function qCatchNum(it, body, finish, info, ctx) {
     onWrong: () => { tries++; miss(); },
     onCatch: () => finish(tries, later(300, () => sayN(it.n))),
   }).catch((e) => console.error("pixi", e));
+}
+
+/* ---------- mode belajar ---------- */
+// kartu materi satu-satu tanpa skor: dibacakan otomatis sambil disorot, ketuk bagian mana pun untuk didengar lagi.
+// items(group) -> daftar kartu berurutan; card(item, ctx) -> { nodes, parts: [[teks, bahasa, elemenSorot?], ...] }
+const LEARN = {
+  huruf: { title: "Belajar Huruf", items: (g) => {
+    const has = new Set(poolFor("huruf", g));
+    return [...ALPHABETS[LEX.lang]].filter((l) => has.has(l));
+  }, card: learnLetter },
+  suku: { title: "Belajar Suku Kata", items: (g) => poolFor("suku", g), card: learnSyllable },
+  tebak: { title: "Belajar Kata", items: (g) => poolFor("tebak", g), card: learnWord },
+  dua: { title: "Belajar Dua Kata", items: (g) => poolFor("dua", g), card: learnTokens },
+  kalimat: { title: "Belajar Kalimat", items: (g) => poolFor("kalimat", g), card: learnTokens },
+  cerita1: { title: "Cerita Pendek", items: (g) => poolFor("cerita1", g), card: learnStory },
+  cerita2: { title: "Cerita Sedang", items: (g) => poolFor("cerita2", g), card: learnStory },
+  cerita3: { title: "Cerita Panjang", items: (g) => poolFor("cerita3", g), card: learnStory },
+  kenal: { title: "Belajar Angka", items: () => range(1, 10), card: learnNumber },
+  tambah: { title: "Belajar Penjumlahan", items: () => range(1, 5).flatMap((a) => range(1, 5).map((b) => ({ a, b }))), card: learnAdd },
+  kurang: { title: "Belajar Pengurangan", items: () => range(2, 10).flatMap((a) => range(1, Math.min(a - 1, 5)).map((b) => ({ a, b }))), card: learnSub },
+};
+
+function learnScreen(game, group, idx = 0) {
+  const L = LEARN[game], items = L.items(group);
+  if (!items.length) return groupScreen(game);
+  idx = Math.max(0, Math.min(idx, items.length - 1));
+  const ctx = { group, emo: null };
+  const body = h("div", { class: "card learn" + (isAr() ? " ar" : ""), dir: LANGS[state.lang].dir });
+  const { nodes, parts } = L.card(items[idx], ctx, body);
+  // dibacakan berurutan; elemen yang sedang dibaca diberi kelas "now"
+  const play = (ps = parts) => sayParts(ps.map(([t, l]) => [t, l]),
+    (k) => ps.forEach(([, , el], i) => { if (i === k) el?.classList.add("seen"); el?.classList.toggle("now", k >= 0 && i === k); }));
+  const last = idx === items.length - 1;
+  const gm = groupsOf(game)[group];
+  render(
+    h("div", { class: "bar" },
+      h("button", { class: "btn small c-red", onclick: () => groupScreen(game) }, "⬅"),
+      h("div", { class: "stars" }, `${idx + 1} / ${items.length}`),
+      h("button", { class: "btn small c-blue", onclick: () => play() }, "🔊")),
+    gm ? h("div", { class: "chip" }, `${gm.ico} ${gm.title}`) : null,
+    body,
+    h("div", { class: "learn-nav" },
+      h("button", { class: "btn c-purple", disabled: idx === 0, onclick: () => learnScreen(game, group, idx - 1) }, "◀"),
+      last
+        ? h("button", { class: "btn c-green", onclick: () => startGame(game, group) }, "🎯 Ayo kuis!")
+        : h("button", { class: "btn c-green", onclick: () => learnScreen(game, group, idx + 1) }, "▶")));
+  body.append(...nodes);
+  setTimeout(() => body.isConnected && play(), 300);
+}
+// elemen yang bisa diketuk untuk dibacakan (bahasa aktif)
+const tapSay = (tag, cls, text, speak = text) => h(tag, { class: cls + " tap", onclick: (e) => { e.stopPropagation(); sayL(speak); } }, text);
+
+function learnLetter(letter, ctx) {
+  const ex = LEX.words.filter((w) => w.initial === letter && (!ctx.group || w.group === ctx.group)).slice(0, 4);
+  const big = tapSay("div", "letter", showLetter(letter), letterName(letter));
+  const exEls = ex.map((w) => h("button", { class: "choice emoji learn-ex", onclick: () => sayL(w.word) },
+    h("div", {}, w.pic), h("div", { class: "opt-word" }, w.word)));
+  return {
+    nodes: [big, h("div", { class: "choices" }, exEls)],
+    parts: [["Huruf", "id"], [letterName(letter), LEX.lang, big], ...ex.map((w, i) => [w.word, LEX.lang, exEls[i]])],
+  };
+}
+
+function learnSyllable(w) {
+  const sylEls = w.syl.map((s) => tapSay("span", "syl", s));
+  const word = tapSay("div", "word", w.word);
+  return {
+    nodes: [h("div", { class: "picture", onclick: () => sayL(w.word) }, w.pic),
+      h("div", { class: "syls" }, sylEls), word],
+    parts: [...w.syl.map((s, i) => [s, LEX.lang, sylEls[i]]), [w.word, LEX.lang, word]],
+  };
+}
+
+function learnWord(w) {
+  const word = tapSay("div", "word", w.word);
+  const letters = w.letters.map((l) => tapSay("span", "syl small", l, letterName(initialOf(l, LEX.lang))));
+  return {
+    nodes: [h("div", { class: "picture", onclick: () => sayL(w.word) }, w.pic), word, h("div", { class: "syls" }, letters)],
+    parts: [[w.word, LEX.lang, word]],
+  };
+}
+
+function learnTokens(p) {
+  const toks = p.text.split(" ").map((t) => tapSay("span", "syl", t));
+  const whole = h("div", { class: "syls" }, toks);
+  return {
+    nodes: [h("div", { class: "picture", onclick: () => sayL(p.text) }, p.pic), whole],
+    parts: [...p.text.split(" ").map((t, i) => [t, LEX.lang, toks[i]]), [p.text, LEX.lang, whole]],
+  };
+}
+
+function learnStory(s) {
+  const lines = s.sentences.map((t) => tapSay("span", "sent", t));
+  return {
+    nodes: [h("div", { class: "story" },
+      h("div", { class: "story-head" }, h("span", { class: "story-pic" }, s.pic), h("h2", {}, s.title)),
+      h("p", { class: "story-text" }, lines.flatMap((el, i) => (i ? [" ", el] : [el]))))],
+    parts: s.sentences.map((t, i) => [t, LEX.lang, lines[i]]),
+  };
+}
+
+// berhitung: benda dihitung satu-satu (angka muncul di tiap benda) lalu hasilnya disebut
+const learnEmo = (ctx) => (ctx.emo ||= themeEmo(ctx)[0]);
+function countParts(group, from = 1) {
+  return [...group.querySelectorAll(".obj:not(.gone)")].map((o, i) => {
+    o.dataset.n = from + i;
+    return [String(from + i), LEX.lang, o];
+  });
+}
+function learnNumber(n, ctx, body) {
+  mathCard(body);
+  const big = tapSay("div", "letter", String(n));
+  const group = objs(n, learnEmo(ctx));
+  return { nodes: [big, group], parts: [...countParts(group), [String(n), LEX.lang, big]] };
+}
+function learnAdd({ a, b }, ctx, body) {
+  mathCard(body);
+  const emo = learnEmo(ctx), A = objs(a, emo), B = objs(b, emo);
+  const eq = tapSay("div", "word", `${a} + ${b} = ${a + b}`, sentence(a, "plus", b, a + b));
+  return {
+    nodes: [h("div", { class: "sum" }, A, h("span", { class: "op" }, "+"), B), eq],
+    parts: [...countParts(A), ...countParts(B, a + 1), [sentence(a, "plus", b, a + b), LEX.lang, eq]],
+  };
+}
+function learnSub({ a, b }, ctx, body) {
+  mathCard(body);
+  const group = objs(a, learnEmo(ctx), { gone: b });
+  const eq = tapSay("div", "word", `${a} − ${b} = ${a - b}`, sentence(a, "minus", b, a - b));
+  return { nodes: [group, eq], parts: [...countParts(group), [sentence(a, "minus", b, a - b), LEX.lang, eq]] };
 }
 
 /* ---------- result + parent ---------- */
