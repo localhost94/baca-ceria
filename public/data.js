@@ -312,6 +312,8 @@ const PROMPTS = [
   "Siapa yang mau main?", "Mau main apa?", "Pilih kategori", "Huruf", "Tangkap huruf", "Bagus!",
   "Suku kata apa yang hilang?", "Gambar apa ini? Pilih katanya", "Hebat sekali!", "Ayo coba lagi!",
 ];
+// pujian yang diucapkan acak setiap jawaban benar
+const PRAISE = ["Bagus!", "Hebat!", "Pintar!", "Benar!", "Keren!", "Bagus sekali!", "Kamu hebat!"];
 const ALPHABETS = {
   id: "ABCDEFGHIJKLMNOPRSTUWYZ",
   en: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",

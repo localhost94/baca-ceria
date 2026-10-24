@@ -17,6 +17,8 @@ function h(tag, props = {}, ...kids) {
 const render = (...nodes) => { window.Fx?.cleanup(); $app.replaceChildren(...nodes.filter((n) => n != null)); window.scrollTo(0, 0); };
 const shuffle = (a) => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const sample = (a, n) => shuffle(a).slice(0, n);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const later = (ms, fn) => wait(ms).then(fn);
 const api = async (path, opts) => {
   const r = await fetch("/api" + path, opts && { ...opts, headers: { "Content-Type": "application/json" }, body: opts.body && JSON.stringify(opts.body) });
   return r.json();
@@ -50,7 +52,7 @@ function playTts(text, lang, token) {
   return new Promise((done, fail) => {
     const a = new Audio(`/api/tts?lang=${lang}&text=${encodeURIComponent(text)}`);
     currentAudio = a;
-    a.onended = () => done();
+    a.onended = a.onpause = () => done(); // dipotong suara lain juga dianggap selesai
     a.onerror = () => fail(new Error("tts"));
     a.play().catch(fail);
     if (token !== speakToken) a.pause();
@@ -251,10 +253,14 @@ function runRound(game, items, idx, stars, ctx) {
       h("div", { class: "stars" }, `⭐ ${stars}`)),
     group ? h("div", { class: "chip" }, `${GROUPS[group].ico} ${GROUPS[group].title}`) : null,
     body);
-  const finish = async (tries) => {
-    await saveAnswer(game, keyOf(item), tries);
+  // speech: promise ucapan jawaban benar; lalu pujian, soal berikutnya baru muncul setelah semuanya selesai
+  const finish = async (tries, speech) => {
     good(); confetti();
-    setTimeout(() => runRound(game, items, idx + 1, stars + (tries === 1 ? 1 : 0), ctx), 1700);
+    const talk = Promise.resolve(speech).then(() => body.isConnected && say(sample(PRAISE, 1)[0]));
+    await Promise.all([saveAnswer(game, keyOf(item), tries), wait(1700), Promise.race([talk, wait(10000)])]);
+    await wait(500);
+    if (!body.isConnected) return; // sudah keluar ke menu
+    runRound(game, items, idx + 1, stars + (tries === 1 ? 1 : 0), ctx);
   };
   MAKERS[game](item, body, finish, info, ctx);
 }
@@ -283,8 +289,8 @@ function qLetter(letter, body, finish, info, ctx) {
     promptEl(info.hint),
     h("div", { class: "letter", onclick: () => sayL(letterName(letter)) }, showLetter(letter)),
     choiceButtons(opts, (o) => o.key === target.word, (tries) => {
-      sayParts([[letterName(letter), LEX.lang], [target.word, LEX.lang]]);
-      body.append(h("div", { class: "word" }, `${letter} · ${target.word}`)); finish(tries);
+      body.append(h("div", { class: "word" }, `${letter} · ${target.word}`));
+      finish(tries, sayParts([[letterName(letter), LEX.lang], [target.word, LEX.lang]]));
     }, { emoji: true }));
   setTimeout(() => sayParts([["Huruf", "id"], [letterName(letter), LEX.lang], [info.hint, "id"]]), 300);
 }
@@ -299,7 +305,7 @@ function qSyllable(w, body, finish, info) {
     h("div", { class: "picture", onclick: () => sayL(w.word) }, w.pic), shown,
     choiceButtons(opts, (o) => o.key === w.syl[pos], (tries) => {
       const gap = shown.querySelector(".gap"); gap.textContent = w.syl[pos]; gap.style.borderBottomStyle = "solid";
-      setTimeout(() => sayL(w.word), 400); finish(tries);
+      finish(tries, later(400, () => sayL(w.word)));
     }));
   setTimeout(() => say("Suku kata apa yang hilang?"), 300);
 }
@@ -311,7 +317,7 @@ function qWord(w, body, finish, info) {
   body.append(
     promptEl(info.hint),
     h("div", { class: "picture", onclick: () => sayL(w.word) }, w.pic),
-    choiceButtons(opts, (o) => o.key === w.word, (tries) => { setTimeout(() => sayParts([[w.word, LEX.lang], ["Bagus!", "id"]]), 400); finish(tries); }));
+    choiceButtons(opts, (o) => o.key === w.word, (tries) => finish(tries, later(400, () => sayL(w.word)))));
   setTimeout(() => say("Gambar apa ini? Pilih katanya"), 300);
 }
 
@@ -327,7 +333,7 @@ function buildTokens(tokens, full, pic, body, finish, info, wide) {
       if (tok === tokens[next]) {
         sayL(tok); slots[next].textContent = tok; slots[next].classList.add("filled");
         t.classList.add("used"); next++;
-        if (next === tokens.length) { setTimeout(() => sayL(full), 600); finish(tries); }
+        if (next === tokens.length) finish(tries, later(600, () => sayL(full)));
       } else { tries++; bad(); t.classList.remove("wrong"); void t.offsetWidth; t.classList.add("wrong"); }
     } });
     return t;
@@ -352,7 +358,7 @@ function qCatch(letter, body, finish, info) {
     display: isAr() ? (l) => l : (l) => (Math.random() < 0.5 ? l : l.toLowerCase()),
     say: (l) => sayL(letterName(l)),
     onWrong: () => { tries++; bad(); },
-    onCatch: () => { good(); setTimeout(() => sayParts([[letterName(letter), LEX.lang], ["Bagus!", "id"]]), 300); finish(tries); },
+    onCatch: () => finish(tries, later(300, () => sayL(letterName(letter)))),
   }).catch((e) => console.error("pixi", e));
 }
 

@@ -46,6 +46,6 @@ function speechTexts(lang) {
   for (const w of L.words) { out.add(w.word); w.syl.forEach((s) => out.add(s)); w.letters.forEach((s) => out.add(s)); }
   for (const p of [...L.phrases, ...L.sentences]) { out.add(p.text); p.text.split(" ").forEach((t) => out.add(t)); }
   for (const l of ALPHABETS[lang]) out.add(letterNameOf(l, lang));
-  if (lang === "id") { PROMPTS.forEach((p) => out.add(p)); Object.values(GAME_INFO).forEach((g) => out.add(g.hint)); }
+  if (lang === "id") { [...PROMPTS, ...PRAISE].forEach((p) => out.add(p)); Object.values(GAME_INFO).forEach((g) => out.add(g.hint)); }
   return [...out];
 }
